@@ -34,13 +34,18 @@ ShopQA is an automated QA platform for Shopify stores. Users input a Figma URL +
 - Issue types follow `lib/modules/types.ts` — always use the `Issue` interface
 - Prompts for Claude live in `lib/claude/prompts/` — one file per module
 
-## Pending ENV vars (to be configured)
-- [ ] `NEXT_PUBLIC_SUPABASE_URL` — Create Supabase project
-- [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY` — From Supabase dashboard
-- [ ] `SUPABASE_SERVICE_ROLE_KEY` — From Supabase dashboard
-- [ ] `FIGMA_ACCESS_TOKEN` — Figma Personal Access Token
-- [ ] `BROWSERLESS_TOKEN` — Browserless.io account
-- [ ] `ANTHROPIC_API_KEY` — Anthropic API key
+## ENV vars status
+- [x] `NEXT_PUBLIC_SUPABASE_URL` — https://hptlczpyyajtcoysyrqe.supabase.co (set in .env.local + Vercel)
+- [x] `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Set in .env.local + Vercel
+- [x] `SUPABASE_SERVICE_ROLE_KEY` — Set in .env.local + Vercel
+- [ ] `FIGMA_ACCESS_TOKEN` — **PENDING**: Generate in Figma > Settings > Personal Access Tokens
+- [x] `BROWSERLESS_TOKEN` — Set in .env.local + Vercel
+- [x] `ANTHROPIC_API_KEY` — Set in .env.local + Vercel
+
+## Supabase project
+- Project ID: `hptlczpyyajtcoysyrqe`
+- Region: sa-east-1
+- Migration `initial_schema` applied (tables: reports, issues, screenshots, report_modules)
 
 ## Progress Log
 
