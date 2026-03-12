@@ -71,6 +71,17 @@ ShopQA is an automated QA platform for Shopify stores. Users input a Figma URL +
 - Report page polls for updates while status is "processing"
 - Added module score calculation (100 - deductions per severity)
 
+### Day 3 (All Modules Implemented) — 2026-03-12
+- Performance module: CWV checks (LCP, CLS, TBT, FCP), Lighthouse score analysis
+- Accessibility module: contrast checking (WCAG luminance calc), heading structure, alt text, Lighthouse a11y
+- Content module: placeholder detection (regex patterns), link checking (HTTP HEAD), broken images, mixed content
+- Shopify module: Add to Cart detection, price display, policy links, cart link, currency consistency
+- Design QA module: Claude Vision visual diff + algorithmic token comparison (colors, typography)
+- Cross-browser module: Chrome vs WebKit screenshot comparison via Claude Vision
+- Claude prompts for all modules (performance, accessibility, content, shopify)
+- Orchestrator updated to use all real modules with parallel execution
+- All 7 QA modules now functional end-to-end
+
 ### Roadmap Reference
 See `docs/03-roadmap.md` for full day-by-day plan.
 - Phase 0 (Setup + Spikes): Days 1-4
