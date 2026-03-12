@@ -1,0 +1,69 @@
+# ShopQA — Project Rules
+
+## Project Overview
+ShopQA is an automated QA platform for Shopify stores. Users input a Figma URL + web URL, and the system generates a comprehensive quality report analyzed by AI.
+
+## Tech Stack
+- **Framework**: Next.js 14+ (App Router) on Vercel
+- **UI**: shadcn/ui + Tailwind CSS
+- **Database**: Supabase (PostgreSQL + Storage + Realtime)
+- **Browser automation**: Playwright via Browserless.io
+- **AI**: Claude Sonnet for analysis
+- **Design source**: Figma REST API
+
+## Architecture
+- `app/` — Next.js pages and API routes
+- `lib/figma/` — Figma API client and token parser
+- `lib/playwright/` — Web capture via Browserless.io
+- `lib/modules/` — QA modules (seo, performance, a11y, content, shopify, design-qa, cross-browser)
+- `lib/claude/` — Claude API client + prompts per module
+- `lib/supabase/` — DB client, queries, storage helpers
+- `components/` — React components (shadcn/ui based)
+- `supabase/migrations/` — SQL migrations
+
+## Commit Rules
+- One commit per "day" of roadmap (each day = a logical unit of work)
+- Commit message format: `day-XX: brief description`
+- Always update this CLAUDE.md in every commit with progress
+- Push after each commit
+
+## Code Conventions
+- TypeScript strict mode
+- Server Components by default, "use client" only when needed
+- All API calls go through `lib/` wrappers, never direct fetch in components
+- Issue types follow `lib/modules/types.ts` — always use the `Issue` interface
+- Prompts for Claude live in `lib/claude/prompts/` — one file per module
+
+## Pending ENV vars (to be configured)
+- [ ] `NEXT_PUBLIC_SUPABASE_URL` — Create Supabase project
+- [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY` — From Supabase dashboard
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` — From Supabase dashboard
+- [ ] `FIGMA_ACCESS_TOKEN` — Figma Personal Access Token
+- [ ] `BROWSERLESS_TOKEN` — Browserless.io account
+- [ ] `ANTHROPIC_API_KEY` — Anthropic API key
+
+## Progress Log
+
+### Day 1 (Setup) — 2026-03-12
+- Created Next.js project with App Router + Tailwind + shadcn/ui
+- Created full project structure per MVP doc
+- Implemented types for all modules (`lib/modules/types.ts`)
+- Figma client + URL parser + token extractor (`lib/figma/`)
+- Playwright capture scaffold (`lib/playwright/capture.ts`)
+- SEO module with algorithmic checks (`lib/modules/seo.ts`)
+- Claude API client with retry logic (`lib/claude/client.ts`)
+- Claude prompts for Design QA, SEO, and Summary
+- Supabase client + typed queries + database types
+- SQL migration for initial schema (reports, issues, screenshots, report_modules)
+- All 4 frontend pages: Dashboard, New Report, Report View, History
+- API route for creating reports (`/api/reports`)
+- `.env.example` with all required vars
+- GitHub repo created, Vercel project linked
+
+### Roadmap Reference
+See `docs/03-roadmap.md` for full day-by-day plan.
+- Phase 0 (Setup + Spikes): Days 1-4
+- Phase 1 (Pipeline Core): Days 5-10
+- Phase 2 (All Modules): Days 11-17
+- Phase 3 (UI + UX): Days 18-22
+- Phase 4 (Polish + Launch): Days 23-26
