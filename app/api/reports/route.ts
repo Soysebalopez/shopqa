@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createReport, getReports } from "@/lib/supabase/queries";
-import { runPipeline } from "@/lib/orchestrator";
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,15 +45,6 @@ export async function POST(request: NextRequest) {
       web_url,
       figma_url: figma_url || undefined,
       viewports,
-    });
-
-    // Run pipeline in background (don't await — let it process async)
-    runPipeline(report.id, {
-      web_url,
-      figma_url: figma_url || undefined,
-      viewports,
-    }).catch((err) => {
-      console.error(`Pipeline error for report ${report.id}:`, err);
     });
 
     return NextResponse.json({ id: report.id });

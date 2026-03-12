@@ -34,10 +34,34 @@ import type {
 export async function runPipeline(reportId: string, input: ReportInput) {
   try {
     // Step 1: Extract data in parallel
-    const [figmaData, webDataChrome] = await Promise.all([
-      input.figma_url ? extractFigmaData(input.figma_url) : null,
-      extractWebData(input.web_url, input.viewports, "chromium"),
-    ]);
+    let figmaData: ExtractedFigmaData | null = null;
+    let webDataChrome: WebCaptureData;
+
+    // Use fetch-based extraction by default (fast, works everywhere)
+    // Playwright/Browserless is used only when BROWSERLESS_TOKEN is set and reachable
+    const useBrowserless = process.env.BROWSERLESS_TOKEN && process.env.USE_BROWSERLESS === "true";
+
+    if (useBrowserless) {
+      try {
+        const [fd, wd] = await Promise.all([
+          input.figma_url ? extractFigmaData(input.figma_url) : null,
+          extractWebData(input.web_url, input.viewports, "chromium"),
+        ]);
+        figmaData = fd;
+        webDataChrome = wd;
+      } catch (captureError) {
+        console.error("Playwright capture failed, falling back to fetch:", captureError);
+        webDataChrome = await extractWebDataFallback(input.web_url);
+      }
+    } else {
+      console.log("Using fetch-based extraction (set USE_BROWSERLESS=true to use Playwright)");
+      const [fd, wd] = await Promise.all([
+        input.figma_url ? extractFigmaData(input.figma_url) : null,
+        extractWebDataFallback(input.web_url),
+      ]);
+      figmaData = fd;
+      webDataChrome = wd;
+    }
 
     // Step 2: Run analysis modules in parallel
     const modulePromises: Promise<void>[] = [];
@@ -220,6 +244,108 @@ export async function runPipeline(reportId: string, input: ReportInput) {
   }
 }
 
+/**
+ * Fallback: extract HTML via simple fetch when Playwright/Browserless is unavailable.
+ * No screenshots, no computed styles, no Lighthouse — but SEO, Content, and Shopify checks still work.
+ */
+async function extractWebDataFallback(url: string): Promise<WebCaptureData> {
+  console.log("Using fetch-based fallback for", url);
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ShopQA/1.0" },
+    signal: AbortSignal.timeout(15000),
+  });
+  const html = await res.text();
+
+  // Parse HTML structure from raw HTML
+  const htmlStructure = parseHtmlFromString(html, url);
+
+  return {
+    screenshots: [],
+    computedStyles: [],
+    htmlStructure,
+  };
+}
+
+function parseHtmlFromString(html: string, baseUrl: string): import("./modules/types").HtmlStructure {
+  // Simple regex-based extraction from raw HTML
+  const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/is);
+  const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["'](.*?)["']/is)
+    || html.match(/<meta[^>]*content=["'](.*?)["'][^>]*name=["']description["']/is);
+
+  // OG tags
+  const ogTags: Record<string, string> = {};
+  const ogMatches = html.matchAll(/<meta[^>]*property=["'](og:[^"']+)["'][^>]*content=["'](.*?)["']/gis);
+  for (const m of ogMatches) ogTags[m[1]] = m[2];
+
+  // Twitter tags
+  const twitterTags: Record<string, string> = {};
+  const twMatches = html.matchAll(/<meta[^>]*name=["'](twitter:[^"']+)["'][^>]*content=["'](.*?)["']/gis);
+  for (const m of twMatches) twitterTags[m[1]] = m[2];
+
+  // Headings
+  const headings: { level: number; text: string }[] = [];
+  const headingMatches = html.matchAll(/<h([1-6])[^>]*>(.*?)<\/h\1>/gis);
+  for (const m of headingMatches) {
+    headings.push({ level: parseInt(m[1]), text: stripTags(m[2]).trim().slice(0, 200) });
+  }
+
+  // Images
+  const images: { src: string; alt?: string }[] = [];
+  const imgMatches = html.matchAll(/<img[^>]*\bsrc=["'](.*?)["'][^>]*/gis);
+  for (const m of imgMatches) {
+    const altMatch = m[0].match(/\balt=["'](.*?)["']/i);
+    const src = m[1].startsWith('http') ? m[1] : new URL(m[1], baseUrl).toString();
+    images.push({ src, alt: altMatch?.[1] || undefined });
+  }
+
+  // Links
+  const links: { href: string; text: string; isExternal: boolean }[] = [];
+  const linkMatches = html.matchAll(/<a[^>]*\bhref=["'](.*?)["'][^>]*>(.*?)<\/a>/gis);
+  for (const m of linkMatches) {
+    try {
+      const href = m[1].startsWith('http') ? m[1] : new URL(m[1], baseUrl).toString();
+      const parsedBase = new URL(baseUrl);
+      const parsedHref = new URL(href);
+      links.push({
+        href,
+        text: stripTags(m[2]).trim().slice(0, 100),
+        isExternal: parsedHref.hostname !== parsedBase.hostname,
+      });
+    } catch { /* skip invalid URLs */ }
+  }
+
+  // Schema markup
+  const schemaMarkup: unknown[] = [];
+  const schemaMatches = html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/gis);
+  for (const m of schemaMatches) {
+    try { schemaMarkup.push(JSON.parse(m[1])); } catch { /* skip */ }
+  }
+
+  // Canonical
+  const canonicalMatch = html.match(/<link[^>]*rel=["']canonical["'][^>]*href=["'](.*?)["']/i);
+
+  // noindex
+  const robotsMatch = html.match(/<meta[^>]*name=["']robots["'][^>]*content=["'](.*?)["']/i);
+  const hasNoIndex = robotsMatch ? robotsMatch[1].toLowerCase().includes('noindex') : false;
+
+  return {
+    title: titleMatch?.[1]?.trim(),
+    metaDescription: metaDescMatch?.[1]?.trim(),
+    ogTags,
+    twitterTags,
+    headings,
+    images: images.slice(0, 100),
+    links: links.slice(0, 200),
+    schemaMarkup,
+    canonical: canonicalMatch?.[1],
+    hasNoIndex,
+  };
+}
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '');
+}
+
 async function extractFigmaData(
   figmaUrl: string
 ): Promise<ExtractedFigmaData | null> {
@@ -309,18 +435,34 @@ function calculateModuleScore(issues: Issue[]): number {
 }
 
 async function generateSummary(reportId: string) {
-  try {
-    const issues = await getReportIssues(reportId);
+  const issues = await getReportIssues(reportId);
+  const { getReportModules } = await import("./supabase/queries");
+  const modules = await getReportModules(reportId);
 
+  // Calculate score locally as fallback
+  const localScore = calculateModuleScore(issues as Issue[]);
+  const moduleScores: Record<string, number> = {};
+  for (const m of modules) {
+    if (m.score != null) moduleScores[m.module] = m.score;
+  }
+
+  // Sort critical issues to top
+  const sortedIssues = [...issues].sort((a, b) => {
+    const order = { critical: 0, warning: 1, info: 2 };
+    return (order[a.severity as keyof typeof order] ?? 3) - (order[b.severity as keyof typeof order] ?? 3);
+  });
+  const topIssues = sortedIssues.slice(0, 5).map((i) => ({
+    category: i.category,
+    title: i.title,
+    description: i.description?.slice(0, 200) || "",
+    severity: i.severity,
+  }));
+
+  try {
     const summary = await askClaudeJson<{
       overall_score: number;
       summary: string;
-      top_issues: {
-        category: string;
-        title: string;
-        description: string;
-        severity: string;
-      }[];
+      top_issues: { category: string; title: string; description: string; severity: string }[];
       module_scores: Record<string, number>;
     }>(SUMMARY_SYSTEM_PROMPT, [{
       type: "text",
@@ -336,11 +478,19 @@ async function generateSummary(reportId: string) {
 
     await completeReport(reportId, summary, summary.overall_score);
   } catch (error) {
-    console.error("Summary generation failed:", error);
-    await completeReport(
-      reportId,
-      { overall_score: 100, summary: "Summary generation failed.", top_issues: [], module_scores: {} },
-      100
-    );
+    console.error("Claude summary failed, using local calculation:", error);
+    // Fallback: generate summary locally
+    const criticalCount = issues.filter((i) => i.severity === "critical").length;
+    const warningCount = issues.filter((i) => i.severity === "warning").length;
+    const infoCount = issues.filter((i) => i.severity === "info").length;
+
+    const localSummary = {
+      overall_score: localScore,
+      summary: `Found ${issues.length} issues: ${criticalCount} critical, ${warningCount} warnings, ${infoCount} info. ${criticalCount > 0 ? "Critical issues need immediate attention." : "No critical issues found."}`,
+      top_issues: topIssues,
+      module_scores: moduleScores,
+    };
+
+    await completeReport(reportId, localSummary, localScore);
   }
 }

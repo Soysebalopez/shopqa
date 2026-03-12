@@ -87,6 +87,16 @@ ShopQA is an automated QA platform for Shopify stores. Users input a Figma URL +
 - Orchestrator updated to use all real modules with parallel execution
 - All 7 QA modules now functional end-to-end
 
+### Day 5 (Pipeline Working E2E) — 2026-03-12
+- Fetch-based HTML extraction fallback (works without Browserless)
+- Pipeline runs all 5 modules in ~16s for a Shopify store
+- Fixed summary generation with local fallback when Claude fails
+- Process API route `/api/reports/[id]/process` for reliable pipeline execution
+- Tested with just-bagels.myshopify.com: 14 issues found (3 critical, 5 warning, 6 info)
+- Score calculation: 49/100 — detects real issues (noindex, missing H1, no policies)
+- All env vars confirmed working: Supabase (read/write), Anthropic API
+- USE_BROWSERLESS=true flag to enable Playwright (disabled by default for reliability)
+
 ### Roadmap Reference
 See `docs/03-roadmap.md` for full day-by-day plan.
 - Phase 0 (Setup + Spikes): Days 1-4

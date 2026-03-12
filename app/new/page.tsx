@@ -61,6 +61,10 @@ export default function NewReport() {
       }
 
       const { id } = await res.json();
+
+      // Trigger pipeline processing (fire and forget — the report page will poll)
+      fetch(`/api/reports/${id}/process`, { method: "POST" }).catch(() => {});
+
       router.push(`/report/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
