@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -11,60 +12,40 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// TODO: Replace with real data from Supabase + Realtime
-const MOCK_MODULES = [
-  { module: "seo", status: "completed", score: 85 },
-  { module: "performance", status: "completed", score: 65 },
-  { module: "accessibility", status: "running", score: null },
-  { module: "content", status: "pending", score: null },
-  { module: "shopify", status: "pending", score: null },
-  { module: "design-qa", status: "pending", score: null },
-  { module: "cross-browser", status: "pending", score: null },
-];
+interface ReportData {
+  id: string;
+  web_url: string;
+  figma_url: string | null;
+  status: "processing" | "completed" | "failed";
+  overall_score: number | null;
+  summary: {
+    summary?: string;
+    top_issues?: { category: string; title: string; severity: string }[];
+  } | null;
+  created_at: string;
+  viewports: string[];
+}
 
-const MOCK_ISSUES = [
-  {
-    id: "1",
-    category: "seo",
-    subcategory: "meta-title",
-    severity: "warning" as const,
-    title: "Page title too short",
-    description: 'Title is 22 characters: "My Store". Recommended: 30-60 characters.',
-    suggestion: "Expand the title with relevant keywords.",
-    element: "title",
-  },
-  {
-    id: "2",
-    category: "seo",
-    subcategory: "headings",
-    severity: "critical" as const,
-    title: "Missing H1 heading",
-    description: "The page has no H1 heading. Every page should have exactly one H1.",
-    suggestion: "Add a single H1 tag that describes the page content.",
-    element: null,
-  },
-  {
-    id: "3",
-    category: "performance",
-    subcategory: "core-web-vitals",
-    severity: "warning" as const,
-    title: "LCP is 3.2s",
-    description: "Largest Contentful Paint is 3.2 seconds, above the 2.5s target.",
-    suggestion: "Optimize the largest content element (likely a hero image).",
-    element: null,
-  },
-  {
-    id: "4",
-    category: "seo",
-    subcategory: "schema",
-    severity: "info" as const,
-    title: "No structured data found",
-    description: "No JSON-LD structured data found on the page.",
-    suggestion: "Add Product or Organization schema markup.",
-    element: null,
-  },
-];
+interface IssueData {
+  id: string;
+  category: string;
+  subcategory: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  description: string;
+  expected_value: string | null;
+  actual_value: string | null;
+  element: string | null;
+  suggestion: string | null;
+}
+
+interface ModuleData {
+  module: string;
+  status: "pending" | "running" | "completed" | "failed";
+  score: number | null;
+}
 
 const MODULE_LABELS: Record<string, string> = {
   "design-qa": "Design QA",
@@ -104,22 +85,91 @@ function ModuleStatusIcon({ status }: { status: string }) {
 
 export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
-  const isProcessing = MOCK_MODULES.some(
-    (m) => m.status === "pending" || m.status === "running"
-  );
-  const completedCount = MOCK_MODULES.filter(
-    (m) => m.status === "completed"
-  ).length;
-  const progressPercent = (completedCount / MOCK_MODULES.length) * 100;
+  const [report, setReport] = useState<ReportData | null>(null);
+  const [issues, setIssues] = useState<IssueData[]>([]);
+  const [modules, setModules] = useState<ModuleData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const categories = [...new Set(MOCK_ISSUES.map((i) => i.category))];
+  const fetchReport = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/reports/${id}`);
+      if (!res.ok) throw new Error("Report not found");
+      const data = await res.json();
+      setReport(data.report);
+      setIssues(data.issues);
+      setModules(data.modules);
+      return data.report.status;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load report");
+      return "failed";
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+
+    fetchReport().then((status) => {
+      // Poll while processing
+      if (status === "processing") {
+        interval = setInterval(async () => {
+          const newStatus = await fetchReport();
+          if (newStatus !== "processing") {
+            clearInterval(interval);
+          }
+        }, 3000);
+      }
+    });
+
+    return () => clearInterval(interval);
+  }, [fetchReport]);
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  if (error || !report) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <p className="text-destructive">{error || "Report not found"}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const isProcessing = report.status === "processing";
+  const completedCount = modules.filter((m) => m.status === "completed").length;
+  const progressPercent =
+    modules.length > 0 ? (completedCount / modules.length) * 100 : 0;
+
+  const criticalCount = issues.filter((i) => i.severity === "critical").length;
+  const warningCount = issues.filter((i) => i.severity === "warning").length;
+  const infoCount = issues.filter((i) => i.severity === "info").length;
+
+  const categories = [...new Set(issues.map((i) => i.category))];
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Report #{id?.slice(0, 8)}</h1>
-        <p className="text-muted-foreground mt-1">
-          https://example-store.myshopify.com
+        <h1 className="text-2xl font-bold">
+          Report #{report.id.slice(0, 8)}
+        </h1>
+        <p className="text-muted-foreground mt-1 font-mono text-sm">
+          {report.web_url}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          {new Date(report.created_at).toLocaleString()} ·{" "}
+          {report.viewports.join(", ")}
+          {report.figma_url && " · Figma linked"}
         </p>
       </div>
 
@@ -129,13 +179,13 @@ export default function ReportPage() {
           <CardHeader>
             <CardTitle className="text-lg">Processing...</CardTitle>
             <CardDescription>
-              {completedCount} of {MOCK_MODULES.length} modules completed
+              {completedCount} of {modules.length} modules completed
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Progress value={progressPercent} />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {MOCK_MODULES.map((m) => (
+              {modules.map((m) => (
                 <div
                   key={m.module}
                   className="flex items-center gap-2 text-sm"
@@ -150,76 +200,117 @@ export default function ReportPage() {
       )}
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-4xl font-bold">78</div>
-            <p className="text-sm text-muted-foreground mt-1">Overall Score</p>
+      {report.status === "completed" && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <div className="text-4xl font-bold">
+                  {report.overall_score ?? "--"}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Overall Score
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <div className="text-4xl font-bold text-red-500">
+                  {criticalCount}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Critical</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <div className="text-4xl font-bold text-yellow-500">
+                  {warningCount}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Warnings</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <div className="text-4xl font-bold text-blue-500">
+                  {infoCount}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Info</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {report.summary?.summary && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Executive Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm">{report.summary.summary}</p>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* Failed state */}
+      {report.status === "failed" && (
+        <Card className="border-destructive">
+          <CardContent className="py-8 text-center">
+            <p className="text-destructive font-medium">
+              Report generation failed
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Check the console logs for details.
+            </p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-4xl font-bold text-red-500">
-              {MOCK_ISSUES.filter((i) => i.severity === "critical").length}
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">Critical</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-4xl font-bold text-yellow-500">
-              {MOCK_ISSUES.filter((i) => i.severity === "warning").length}
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">Warnings</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-4xl font-bold text-blue-500">
-              {MOCK_ISSUES.filter((i) => i.severity === "info").length}
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">Info</p>
-          </CardContent>
-        </Card>
-      </div>
+      )}
 
       {/* Issues by category */}
-      <Tabs defaultValue="all">
-        <TabsList>
-          <TabsTrigger value="all">
-            All ({MOCK_ISSUES.length})
-          </TabsTrigger>
-          {categories.map((cat) => (
-            <TabsTrigger key={cat} value={cat}>
-              {MODULE_LABELS[cat] || cat} (
-              {MOCK_ISSUES.filter((i) => i.category === cat).length})
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      {issues.length > 0 && (
+        <Tabs defaultValue="all">
+          <TabsList>
+            <TabsTrigger value="all">All ({issues.length})</TabsTrigger>
+            {categories.map((cat) => (
+              <TabsTrigger key={cat} value={cat}>
+                {MODULE_LABELS[cat] || cat} (
+                {issues.filter((i) => i.category === cat).length})
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-        <TabsContent value="all" className="space-y-4 mt-4">
-          {MOCK_ISSUES.map((issue) => (
-            <IssueCard key={issue.id} issue={issue} />
-          ))}
-        </TabsContent>
-
-        {categories.map((cat) => (
-          <TabsContent key={cat} value={cat} className="space-y-4 mt-4">
-            {MOCK_ISSUES.filter((i) => i.category === cat).map((issue) => (
+          <TabsContent value="all" className="space-y-4 mt-4">
+            {issues.map((issue) => (
               <IssueCard key={issue.id} issue={issue} />
             ))}
           </TabsContent>
-        ))}
-      </Tabs>
+
+          {categories.map((cat) => (
+            <TabsContent key={cat} value={cat} className="space-y-4 mt-4">
+              {issues
+                .filter((i) => i.category === cat)
+                .map((issue) => (
+                  <IssueCard key={issue.id} issue={issue} />
+                ))}
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
+
+      {issues.length === 0 && report.status === "completed" && (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <p className="text-muted-foreground">
+              No issues found. The page looks great!
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-function IssueCard({
-  issue,
-}: {
-  issue: (typeof MOCK_ISSUES)[number];
-}) {
+function IssueCard({ issue }: { issue: IssueData }) {
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -233,6 +324,22 @@ function IssueCard({
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="text-sm">{issue.description}</p>
+        {(issue.expected_value || issue.actual_value) && (
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            {issue.expected_value && (
+              <div>
+                <span className="text-muted-foreground">Expected: </span>
+                <span className="font-mono">{issue.expected_value}</span>
+              </div>
+            )}
+            {issue.actual_value && (
+              <div>
+                <span className="text-muted-foreground">Actual: </span>
+                <span className="font-mono">{issue.actual_value}</span>
+              </div>
+            )}
+          </div>
+        )}
         {issue.suggestion && (
           <p className="text-sm text-muted-foreground">
             <strong>Fix:</strong> {issue.suggestion}

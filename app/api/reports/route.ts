@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createReport, getReports } from "@/lib/supabase/queries";
+import { runPipeline } from "@/lib/orchestrator";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { web_url, figma_url, viewports } = body;
+    const { web_url, figma_url, viewports = ["desktop"] } = body;
 
     if (!web_url) {
       return NextResponse.json(
@@ -39,11 +41,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // TODO: Create report in Supabase and trigger pipeline
-    // For now, return a mock ID
-    const mockId = crypto.randomUUID();
+    // Create report in Supabase
+    const report = await createReport({
+      web_url,
+      figma_url: figma_url || undefined,
+      viewports,
+    });
 
-    return NextResponse.json({ id: mockId });
+    // Run pipeline in background (don't await — let it process async)
+    runPipeline(report.id, {
+      web_url,
+      figma_url: figma_url || undefined,
+      viewports,
+    }).catch((err) => {
+      console.error(`Pipeline error for report ${report.id}:`, err);
+    });
+
+    return NextResponse.json({ id: report.id });
   } catch (error) {
     console.error("Error creating report:", error);
     return NextResponse.json(
@@ -54,6 +68,11 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  // TODO: Fetch reports from Supabase
-  return NextResponse.json({ reports: [] });
+  try {
+    const reports = await getReports();
+    return NextResponse.json({ reports });
+  } catch (error) {
+    console.error("Error fetching reports:", error);
+    return NextResponse.json({ reports: [] });
+  }
 }

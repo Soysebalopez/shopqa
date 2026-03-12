@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -8,28 +11,17 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// TODO: Replace with real data from Supabase once connected
-const MOCK_REPORTS = [
-  {
-    id: "1",
-    web_url: "https://example-store.myshopify.com",
-    figma_url: "https://figma.com/design/abc123/Store",
-    status: "completed" as const,
-    overall_score: 78,
-    created_at: "2026-03-12T10:00:00Z",
-    viewports: ["desktop", "mobile"],
-  },
-  {
-    id: "2",
-    web_url: "https://another-store.myshopify.com",
-    figma_url: null,
-    status: "processing" as const,
-    overall_score: null,
-    created_at: "2026-03-12T09:30:00Z",
-    viewports: ["desktop"],
-  },
-];
+interface Report {
+  id: string;
+  web_url: string;
+  figma_url: string | null;
+  status: "processing" | "completed" | "failed";
+  overall_score: number | null;
+  created_at: string;
+  viewports: string[];
+}
 
 function ScoreBadge({ score }: { score: number | null }) {
   if (score === null) return <Badge variant="secondary">--</Badge>;
@@ -58,6 +50,17 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function Dashboard() {
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/reports")
+      .then((res) => res.json())
+      .then((data) => setReports(data.reports || []))
+      .catch(() => setReports([]))
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -72,55 +75,64 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      <div className="grid gap-4">
-        {MOCK_REPORTS.map((report) => (
-          <Link key={report.id} href={`/report/${report.id}`}>
-            <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-mono">
-                    {report.web_url}
-                  </CardTitle>
-                  <div className="flex gap-2 items-center">
-                    <ScoreBadge score={report.overall_score} />
-                    <StatusBadge status={report.status} />
+      {loading && (
+        <div className="grid gap-4">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      )}
+
+      {!loading && (
+        <div className="grid gap-4">
+          {reports.map((report) => (
+            <Link key={report.id} href={`/report/${report.id}`}>
+              <Card className="hover:border-primary/50 transition-colors cursor-pointer">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-mono">
+                      {report.web_url}
+                    </CardTitle>
+                    <div className="flex gap-2 items-center">
+                      <ScoreBadge score={report.overall_score} />
+                      <StatusBadge status={report.status} />
+                    </div>
                   </div>
-                </div>
-                <CardDescription>
-                  {new Date(report.created_at).toLocaleString()} ·{" "}
-                  {report.viewports.join(", ")}
-                  {report.figma_url && " · Figma linked"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {report.status === "completed" && (
-                  <p className="text-sm text-muted-foreground">
-                    Click to view full report
-                  </p>
-                )}
-                {report.status === "processing" && (
-                  <p className="text-sm text-muted-foreground">
-                    Report is being generated...
-                  </p>
-                )}
+                  <CardDescription>
+                    {new Date(report.created_at).toLocaleString()} ·{" "}
+                    {report.viewports.join(", ")}
+                    {report.figma_url && " · Figma linked"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {report.status === "completed" && (
+                    <p className="text-sm text-muted-foreground">
+                      Click to view full report
+                    </p>
+                  )}
+                  {report.status === "processing" && (
+                    <p className="text-sm text-muted-foreground">
+                      Report is being generated...
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+
+          {reports.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-muted-foreground mb-4">
+                  No reports yet. Create your first QA report.
+                </p>
+                <Link href="/new">
+                  <Button>Create Report</Button>
+                </Link>
               </CardContent>
             </Card>
-          </Link>
-        ))}
-
-        {MOCK_REPORTS.length === 0 && (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground mb-4">
-                No reports yet. Create your first QA report.
-              </p>
-              <Link href="/new">
-                <Button>Create Report</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

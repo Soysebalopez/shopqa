@@ -60,6 +60,17 @@ ShopQA is an automated QA platform for Shopify stores. Users input a Figma URL +
 - `.env.example` with all required vars
 - GitHub repo created, Vercel project linked
 
+### Day 2 (Pipeline + Real Data) — 2026-03-12
+- Built orchestrator (`lib/orchestrator.ts`) — coordinates full pipeline
+- Pipeline runs: Figma extraction, web capture, module analysis, summary generation
+- SEO module fully integrated (algorithmic + Claude enrichment)
+- Other modules have placeholder structure ready for implementation
+- API route POST /api/reports now creates real Supabase records and triggers pipeline
+- API route GET /api/reports/[id] returns report + issues + modules
+- Dashboard and Report pages now fetch real data from API
+- Report page polls for updates while status is "processing"
+- Added module score calculation (100 - deductions per severity)
+
 ### Roadmap Reference
 See `docs/03-roadmap.md` for full day-by-day plan.
 - Phase 0 (Setup + Spikes): Days 1-4
